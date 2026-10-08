@@ -16,6 +16,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+
 class MyHashMapTest {
 
   private static final Duration HANG_GUARD = Duration.ofMillis(500);
@@ -456,11 +457,11 @@ class MyHashMapTest {
     @Test
     @DisplayName("A thousand entries are all retrievable")
     void when_putThousandEntries_then_allRetrievable() {
-      for (int i = 0; i < 1_000; i++) {
+      for (int i = 0; i < 1_000; ++i) {
         assertNull(map.put("key" + i, i));
       }
       assertEquals(1_000, map.size());
-      for (int i = 0; i < 1_000; i++) {
+      for (int i = 0; i < 1_000; ++i) {
         assertEquals(i, map.get("key" + i));
       }
     }
@@ -468,7 +469,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("After removing half of the entries the rest remain intact")
     void when_removeHalfEntries_then_remainingIntact() {
-      for (int i = 0; i < 200; i++) {
+      for (int i = 0; i < 200; ++i) {
         map.put("k" + i, i);
       }
       assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
@@ -477,7 +478,7 @@ class MyHashMapTest {
         }
       });
       assertEquals(100, map.size());
-      for (int i = 0; i < 200; i++) {
+      for (int i = 0; i < 200; ++i) {
         if (i % 2 == 0) {
           assertNull(map.get("k" + i));
         } else {
@@ -498,7 +499,7 @@ class MyHashMapTest {
       Map<Integer, String> ref = new HashMap<>();
       Random rnd = new Random(42);
 
-      for (int i = 0; i < 300; i++) {
+      for (int i = 0; i < 300; ++i) {
         int key = rnd.nextInt(64);
         String value = "v" + rnd.nextInt(1_000);
         assertEquals(ref.put(key, value), my.put(key, value));
@@ -523,6 +524,189 @@ class MyHashMapTest {
         assertEquals(ref.get(key), my.get(key));
       }
       assertEquals(ref.size(), my.size());
+    }
+  }
+
+  @Nested
+  @DisplayName("resize")
+  class ResizeTest {
+
+    @Test
+    @DisplayName("All entries survive growth beyond the load factor")
+    void when_sizeExceedsThreshold_then_allEntriesSurviveResize() {
+      MyHashMap<Integer, Integer> m = new MyHashMap<>();
+      for (int i = 0; i < 1_000; ++i) {
+        assertNull(m.put(i, i));
+      }
+      assertEquals(1_000, m.size());
+      for (int i = 0; i < 1_000; ++i) {
+        assertEquals(i, m.get(i));
+      }
+    }
+
+    @Test
+    @DisplayName(
+        "A bucket is correctly split into low and high halves on resize")
+    void
+    when_resizeSplitsBucket_then_bothHalvesRetrievable() {
+      // hash 0 and hash 16 share bucket 0 at capacity 16 (mask 0b1111);
+      // on resize to 32 the new bit 0b10000 splits them into buckets 0 and 16.
+      // threshold(16) = 12, so a resize happens mid-fill with a 13-node chain.
+      MyHashMap<CollisionKey, Integer> m = new MyHashMap<>();
+      for (int i = 0; i < 20; ++i) {
+        m.put(new CollisionKey(i, (i % 2 == 0) ? 0 : 16), i);
+      }
+      assertEquals(20, m.size());
+      for (int i = 0; i < 20; ++i) {
+        assertEquals(i, m.get(new CollisionKey(i, (i % 2 == 0) ? 0 : 16)));
+      }
+    }
+
+    @Test
+    @DisplayName("Overwrites after a resize are still found")
+    void when_putAfterResize_then_entriesRetrievable() {
+      MyHashMap<String, Integer> m = new MyHashMap<>();
+      for (int i = 0; i < 100; ++i) {
+        m.put("k" + i, i);
+      }
+      for (int i = 0; i < 100; ++i) {
+        m.put("k" + i, i + 100);
+      }
+      assertEquals(100, m.size());
+      for (int i = 0; i < 100; ++i) {
+        assertEquals(i + 100, m.get("k" + i));
+      }
+    }
+  }
+
+  @Nested
+  @DisplayName("clear")
+  class ClearTest {
+
+    @Test
+    @DisplayName("clear() on an empty map has no effect and throws nothing")
+    void when_clearEmptyMap_then_sizeZeroAndNoException() {
+      map.clear();
+      assertTrue(map.isEmpty());
+      assertEquals(0, map.size());
+      assertNull(map.get("k"));
+    }
+
+    @Test
+    @DisplayName("clear() resets size to 0 and makes the map empty")
+    void when_clearNonEmptyMap_then_sizeZeroAndIsEmpty() {
+      map.put("a", 1);
+      map.put("b", 2);
+      map.put("c", 3);
+      map.clear();
+      assertEquals(0, map.size());
+      assertTrue(map.isEmpty());
+    }
+
+    @Test
+    @DisplayName("clear() removes all previously stored entries")
+    void when_clearNonEmptyMap_then_allEntriesGone() {
+      // covers a null key, a null value and a collision chain ("Aa"/"BB", hash
+      // 2112)
+      map.put("a", 1);
+      map.put(null, 2);
+      map.put("c", null);
+      map.put("Aa", 4);
+      map.put("BB", 5);
+      map.clear();
+      assertNull(map.get("a"));
+      assertNull(map.get(null));
+      assertNull(map.get("c"));
+      assertNull(map.get("Aa"));
+      assertNull(map.get("BB"));
+      assertFalse(map.containsKey("a"));
+      assertFalse(map.containsKey(null));
+      assertFalse(map.containsKey("BB"));
+    }
+
+    @Test
+    @DisplayName("remove() returns null for any key after clear()")
+    void when_removeAfterClear_then_returnsNull() {
+      map.put("k", 1);
+      map.clear();
+      assertNull(map.remove("k"));
+      assertEquals(0, map.size());
+    }
+
+    @Test
+    @DisplayName(
+        "put() of a former key after clear() is treated as a brand-new key")
+    void
+    when_putSameKeyAfterClear_then_treatedAsNewKey() {
+      map.put("k", 1);
+      map.clear();
+      assertNull(map.put("k", 2));
+      assertEquals(1, map.size());
+      assertEquals(2, map.get("k"));
+    }
+
+    @Test
+    @DisplayName(
+        "The map is fully usable after clear(): put/get/overwrite/remove")
+    void
+    when_operationsAfterClear_then_mapWorks() {
+      map.put("a", 1);
+      map.put("b", 2);
+      map.clear();
+      assertNull(map.put("x", 10));
+      assertEquals(10, map.get("x"));
+      assertEquals(10, map.put("x", 11)); // overwrite still works
+      assertEquals(1, map.size());
+      assertEquals(11, map.remove("x")); // remove still works
+      assertTrue(map.isEmpty());
+    }
+
+    @Test
+    @DisplayName("clear() after growth (resizes) keeps the map consistent "
+                 + "and refillable")
+    void
+    when_clearAfterResize_then_mapConsistentAndRefillable() {
+      // Grow well beyond the threshold to trigger several resizes,
+      // then verify that clear() resets the resize state coherently:
+      // refilling must not lose entries (threshold vs table.length consistency)
+      for (int i = 0; i < 500; ++i) {
+        map.put("k" + i, i);
+      }
+      assertEquals(500, map.size());
+
+      map.clear();
+      assertTrue(map.isEmpty());
+
+      for (int i = 0; i < 300; ++i) {
+        assertNull(map.put("j" + i, i));
+      }
+      assertEquals(300, map.size());
+      for (int i = 0; i < 300; ++i) {
+        assertEquals(i, map.get("j" + i));
+      }
+    }
+
+    @Test
+    @DisplayName("clear() is idempotent")
+    void when_clearTwice_then_noExceptionAndStillEmpty() {
+      map.put("a", 1);
+      map.clear();
+      map.clear();
+      assertEquals(0, map.size());
+      assertTrue(map.isEmpty());
+    }
+
+    @Test
+    @DisplayName("A long collision chain is cleared entirely")
+    void when_clearMapWithChains_then_allChainKeysGone() {
+      MyHashMap<CollisionKey, Integer> m = chain(10);
+      assertEquals(10, m.size());
+      m.clear();
+      assertEquals(0, m.size());
+      for (int i = 0; i < 10; ++i) {
+        assertNull(m.get(CollisionKey.of(i)));
+        assertFalse(m.containsKey(CollisionKey.of(i)));
+      }
     }
   }
 
@@ -556,7 +740,7 @@ class MyHashMapTest {
   /** Builds a map with n keys in one bucket */
   private MyHashMap<CollisionKey, Integer> chain(int n) {
     MyHashMap<CollisionKey, Integer> my = new MyHashMap<>();
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n; ++i) {
       my.put(CollisionKey.of(i), i);
     }
     return my;
