@@ -11,7 +11,7 @@
     <artifactId>demo-app</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-    <name>javaredis</name>
+    <name>myhashmap</name>
 
     <!-- ===================== Properties ===================== -->
     <properties>
@@ -86,9 +86,6 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.6.4</version>
-                <configuration>
-                    <mainClass>com.example.javaredis.app.Application</mainClass>
-                </configuration>
             </plugin>
 
             <!--
