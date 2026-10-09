@@ -3,29 +3,40 @@ package com.github.alexandersloburev;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Random;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 
-class MyHashMapTest {
+class HashTableTest {
 
   private static final Duration HANG_GUARD = Duration.ofMillis(500);
 
-  private MyHashMap<String, Integer> map;
+  private HashTable<String, Integer> map;
 
   @BeforeEach
   void setUp() {
-    map = new MyHashMap<>();
+    map = new HashTable<>();
   }
 
   @Nested
@@ -42,7 +53,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("A map with custom capacity is usable")
     void when_customCapacity_then_mapIsUsable() {
-      MyHashMap<String, Integer> custom = new MyHashMap<>(64);
+      HashTable<String, Integer> custom = new HashTable<>(64);
       custom.put("a", 1);
       assertEquals(1, custom.get("a"));
       assertEquals(1, custom.size());
@@ -51,7 +62,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("A map with a non-power-of-two capacity still works")
     void when_nonPowerOfTwoCapacity_then_mapStillWorks() {
-      MyHashMap<String, Integer> odd = new MyHashMap<>(10);
+      HashTable<String, Integer> odd = new HashTable<>(10);
       odd.put("a", 1);
       odd.put("b", 2);
       assertEquals(1, odd.get("a"));
@@ -62,13 +73,13 @@ class MyHashMapTest {
     @Test
     @DisplayName("Zero capacity is rejected with IllegalArgumentException")
     void when_zeroCapacity_then_throwsIllegalArgumentException() {
-      assertThrows(IllegalArgumentException.class, () -> new MyHashMap<>(0));
+      assertThrows(IllegalArgumentException.class, () -> new HashTable<>(0));
     }
 
     @Test
     @DisplayName("Negative capacity is rejected with IllegalArgumentException")
     void when_negativeCapacity_then_throwsIllegalArgumentException() {
-      assertThrows(IllegalArgumentException.class, () -> new MyHashMap<>(-1));
+      assertThrows(IllegalArgumentException.class, () -> new HashTable<>(-1));
     }
   }
 
@@ -224,7 +235,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("get() finds a value at the tail of a deep chain")
     void when_getFromDeepChain_then_findsTailValue() {
-      MyHashMap<CollisionKey, Integer> m = chain(5);
+      HashTable<CollisionKey, Integer> m = chain(5);
       assertEquals(4, m.get(CollisionKey.of(4)));
     }
   }
@@ -263,7 +274,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("remove() of a chain head keeps the rest of the chain intact")
     void when_removeHeadOfChain_then_returnsValueAndRestIntact() {
-      MyHashMap<CollisionKey, Integer> m = chain(3);
+      HashTable<CollisionKey, Integer> m = chain(3);
       Integer removed = assertTimeoutPreemptively(
           HANG_GUARD, () -> m.remove(CollisionKey.of(0)));
       assertEquals(0, removed);
@@ -278,7 +289,7 @@ class MyHashMapTest {
         "remove() of a chain middle keeps the rest of the chain intact")
     void
     when_removeMiddleOfChain_then_returnsValueAndRestIntact() {
-      MyHashMap<CollisionKey, Integer> m = chain(3);
+      HashTable<CollisionKey, Integer> m = chain(3);
       Integer removed = assertTimeoutPreemptively(
           HANG_GUARD, () -> m.remove(CollisionKey.of(1)));
       assertEquals(1, removed);
@@ -291,7 +302,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("remove() of a chain tail keeps the rest of the chain intact")
     void when_removeTailOfChain_then_returnsValueAndRestIntact() {
-      MyHashMap<CollisionKey, Integer> m = chain(3);
+      HashTable<CollisionKey, Integer> m = chain(3);
       Integer removed = assertTimeoutPreemptively(
           HANG_GUARD, () -> m.remove(CollisionKey.of(2)));
       assertEquals(2, removed);
@@ -303,7 +314,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("remove() of an absent key in an occupied bucket returns null")
     void when_removeAbsentKeyFromOccupiedBucket_then_returnsNull() {
-      MyHashMap<CollisionKey, Integer> m = chain(2);
+      HashTable<CollisionKey, Integer> m = chain(2);
       Integer removed = assertTimeoutPreemptively(
           HANG_GUARD, () -> m.remove(CollisionKey.of(99)));
       assertNull(removed);
@@ -313,7 +324,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("Removing a chain from tail to head removes all elements")
     void when_removeChainFromTailToHead_then_allRemoved() {
-      MyHashMap<CollisionKey, Integer> m = chain(3);
+      HashTable<CollisionKey, Integer> m = chain(3);
       assertEquals(2, assertTimeoutPreemptively(
                           HANG_GUARD, () -> m.remove(CollisionKey.of(2))));
       assertEquals(1, assertTimeoutPreemptively(
@@ -398,7 +409,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("containsKey() is true for chain members and false for others")
     void when_containsKeyInDeepChain_then_trueForMembersFalseForOthers() {
-      MyHashMap<CollisionKey, Integer> m = chain(5);
+      HashTable<CollisionKey, Integer> m = chain(5);
       assertTrue(m.containsKey(CollisionKey.of(4)));
       assertFalse(m.containsKey(CollisionKey.of(99)));
     }
@@ -495,7 +506,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("Random operations match java.util.HashMap behaviour")
     void when_randomOperations_then_behaviorMatchesReference() {
-      MyHashMap<Integer, String> my = new MyHashMap<>();
+      HashTable<Integer, String> my = new HashTable<>();
       Map<Integer, String> ref = new HashMap<>();
       Random rnd = new Random(42);
 
@@ -534,7 +545,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("All entries survive growth beyond the load factor")
     void when_sizeExceedsThreshold_then_allEntriesSurviveResize() {
-      MyHashMap<Integer, Integer> m = new MyHashMap<>();
+      HashTable<Integer, Integer> m = new HashTable<>();
       for (int i = 0; i < 1_000; ++i) {
         assertNull(m.put(i, i));
       }
@@ -552,7 +563,7 @@ class MyHashMapTest {
       // hash 0 and hash 16 share bucket 0 at capacity 16 (mask 0b1111);
       // on resize to 32 the new bit 0b10000 splits them into buckets 0 and 16.
       // threshold(16) = 12, so a resize happens mid-fill with a 13-node chain.
-      MyHashMap<CollisionKey, Integer> m = new MyHashMap<>();
+      HashTable<CollisionKey, Integer> m = new HashTable<>();
       for (int i = 0; i < 20; ++i) {
         m.put(new CollisionKey(i, (i % 2 == 0) ? 0 : 16), i);
       }
@@ -565,7 +576,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("Overwrites after a resize are still found")
     void when_putAfterResize_then_entriesRetrievable() {
-      MyHashMap<String, Integer> m = new MyHashMap<>();
+      HashTable<String, Integer> m = new HashTable<>();
       for (int i = 0; i < 100; ++i) {
         m.put("k" + i, i);
       }
@@ -699,7 +710,7 @@ class MyHashMapTest {
     @Test
     @DisplayName("A long collision chain is cleared entirely")
     void when_clearMapWithChains_then_allChainKeysGone() {
-      MyHashMap<CollisionKey, Integer> m = chain(10);
+      HashTable<CollisionKey, Integer> m = chain(10);
       assertEquals(10, m.size());
       m.clear();
       assertEquals(0, m.size());
@@ -707,6 +718,453 @@ class MyHashMapTest {
         assertNull(m.get(CollisionKey.of(i)));
         assertFalse(m.containsKey(CollisionKey.of(i)));
       }
+    }
+  }
+
+  @Nested
+  @DisplayName("Iteration")
+  class IterationTest {
+
+    @Test
+    @DisplayName("keySet() iteration returns every key exactly once")
+    void when_iterateKeySet_then_allKeysReturnedOnce() {
+      for (int i = 0; i < 50; i++) {
+        map.put("k" + i, i);
+      }
+      Set<String> seen = new HashSet<>();
+      for (String k : map.keySet()) {
+        seen.add(k);
+      }
+      assertEquals(50, seen.size());
+      for (int i = 0; i < 50; i++) {
+        assertTrue(seen.contains("k" + i));
+      }
+    }
+
+    @Test
+    @DisplayName("values() iteration returns every value (duplicates included)")
+    void when_iterateValues_then_allValuesReturned() {
+      map.put("a", 1);
+      map.put("b", 1);
+      map.put("c", 2);
+      List<Integer> seen = new ArrayList<>();
+      for (Integer v : map.values()) {
+        seen.add(v);
+      }
+      assertEquals(3, seen.size());
+      assertEquals(2, Collections.frequency(seen, 1));
+      assertEquals(1, Collections.frequency(seen, 2));
+    }
+
+    @Test
+    @DisplayName("entrySet() iteration returns every key-value pair")
+    void when_iterateEntrySet_then_allEntriesReturned() {
+      map.put("a", 1);
+      map.put(null, 2);
+      map.put("c", null);
+      Set<Map.Entry<String, Integer>> seen = new HashSet<>();
+      for (Map.Entry<String, Integer> e : map.entrySet()) {
+        seen.add(e);
+      }
+      assertEquals(3, seen.size());
+      // Node implements the Map.Entry contract, so entries compare equal to
+      // SimpleEntry
+      assertTrue(seen.contains(new AbstractMap.SimpleEntry<>("a", 1)));
+      assertTrue(seen.contains(new AbstractMap.SimpleEntry<>(null, 2)));
+      assertTrue(seen.contains(new AbstractMap.SimpleEntry<>("c", null)));
+    }
+
+    @Test
+    @DisplayName("Iterating an empty map yields no elements")
+    void when_iterateEmptyMap_then_noElements() {
+      assertFalse(map.keySet().iterator().hasNext());
+      assertFalse(map.values().iterator().hasNext());
+      assertFalse(map.entrySet().iterator().hasNext());
+    }
+
+    @Test
+    @DisplayName(
+        "next() on an exhausted iterator throws NoSuchElementException")
+    void
+    when_nextAfterExhaustion_then_throwsNoSuchElementException() {
+      map.put("k", 1);
+      Iterator<String> it = map.keySet().iterator();
+      assertEquals("k", it.next());
+      assertThrows(NoSuchElementException.class, it::next);
+    }
+
+    @Test
+    @DisplayName("Iteration order: buckets left to right")
+    void when_iterate_then_bucketsLeftToRight() {
+      // Integer keys 0..9 hash to themselves and occupy buckets 0..9
+      // (10 entries < threshold 12 → no resize, the layout is deterministic)
+      HashTable<Integer, Integer> m = new HashTable<>();
+      for (int i = 0; i < 10; i++) {
+        m.put(i, i);
+      }
+      List<Integer> order = new ArrayList<>();
+      for (Integer k : m.keySet()) {
+        order.add(k);
+      }
+      assertEquals(Arrays.asList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), order);
+    }
+
+    @Test
+    @DisplayName(
+        "Iteration order: a chain inside a bucket follows insertion order")
+    void
+    when_iterateBucketChain_then_insertionOrderPreserved() {
+      // all three keys collide in bucket 0 (hashCode 0); tail insertion
+      // preserves insertion order inside the chain
+      HashTable<CollisionKey, Integer> m = new HashTable<>();
+      m.put(CollisionKey.of(3), 30);
+      m.put(CollisionKey.of(1), 10);
+      m.put(CollisionKey.of(2), 20);
+      List<Integer> ids = new ArrayList<>();
+      for (CollisionKey k : m.keySet()) {
+        ids.add(k.id);
+      }
+      assertEquals(Arrays.asList(3, 1, 2), ids);
+    }
+  }
+
+  @Nested
+  @DisplayName("Fail-fast (ConcurrentModificationException)")
+  class FailFastTest {
+
+    @Test
+    @DisplayName("put() of a NEW key during iteration throws CME")
+    void when_putNewKeyDuringIteration_then_throwsCME() {
+      map.put("a", 1);
+      map.put("b", 2);
+      Iterator<String> it = map.keySet().iterator();
+      it.next();
+      map.put("c", 3); // structural change
+      assertThrows(ConcurrentModificationException.class, it::next);
+    }
+
+    @Test
+    @DisplayName(
+        "put() that triggers a resize during iteration also throws CME")
+    void
+    when_putTriggeringResizeDuringIteration_then_throwsCME() {
+      for (int i = 0; i < 12; i++) { // 12 = threshold, no resize yet
+        map.put("k" + i, i);
+      }
+      Iterator<String> it = map.keySet().iterator();
+      it.next();
+      map.put("new", 0); // size 13 > 12 → resize; the put itself is structural
+      assertThrows(ConcurrentModificationException.class, it::next);
+    }
+
+    @Test
+    @DisplayName("remove() during iteration throws CME")
+    void when_removeDuringIteration_then_throwsCME() {
+      map.put("a", 1);
+      map.put("b", 2);
+      Iterator<String> it = map.keySet().iterator();
+      it.next();
+      map.remove("b");
+      assertThrows(ConcurrentModificationException.class, it::next);
+    }
+
+    @Test
+    @DisplayName("clear() during iteration throws CME")
+    void when_clearDuringIteration_then_throwsCME() {
+      map.put("a", 1);
+      map.put("b", 2);
+      Iterator<String> it = map.keySet().iterator();
+      it.next();
+      map.clear();
+      assertThrows(ConcurrentModificationException.class, it::next);
+    }
+
+    @Test
+    @DisplayName(
+        "Modifying the map through a VIEW during iteration also throws CME")
+    void
+    when_viewModifiedDuringIteration_then_throwsCME() {
+      map.put("a", 1);
+      map.put("b", 2);
+      Iterator<String> it = map.keySet().iterator();
+      it.next();
+      map.keySet().remove("b"); // a view removal is still a structural change
+      assertThrows(ConcurrentModificationException.class, it::next);
+    }
+
+    @Test
+    @DisplayName("Overwriting an existing key during iteration does NOT "
+                 + "throw (not structural)")
+    void
+    when_overwriteDuringIteration_then_noCME() {
+      map.put("a", 1); // bucket 1
+      map.put("b", 2); // bucket 2
+      Iterator<String> it = map.keySet().iterator();
+      assertEquals("a", it.next());
+      map.put("b", 20);             // value update — no structural change
+      assertEquals("b", it.next()); // iteration continues normally
+    }
+
+    @Test
+    @DisplayName(
+        "entry.setValue() during iteration does NOT throw (not structural)")
+    void
+    when_entrySetValueDuringIteration_then_noCME() {
+      map.put("a", 1);
+      map.put("b", 2);
+      Iterator<Map.Entry<String, Integer>> it = map.entrySet().iterator();
+      Map.Entry<String, Integer> first = it.next();
+      first.setValue(100);
+      assertEquals(100, map.get("a"));
+      assertEquals("b", it.next().getKey());
+    }
+  }
+
+  @Nested
+  @DisplayName("Iterator.remove()")
+  class IteratorRemoveTest {
+
+    @Test
+    @DisplayName(
+        "remove() deletes the last returned element and iteration continues")
+    void
+    when_iteratorRemove_then_elementRemovedAndIterationContinues() {
+      map.put("a", 1); // bucket 1
+      map.put("b", 2); // bucket 2
+      map.put("c", 3); // bucket 3
+      Iterator<String> it = map.keySet().iterator();
+      assertEquals("a", it.next());
+      it.remove();
+      assertEquals(2, map.size());
+      assertNull(map.get("a"));
+      assertEquals("b", it.next());
+      assertEquals("c", it.next());
+      assertFalse(it.hasNext());
+    }
+
+    @Test
+    @DisplayName("Removing every even key via the iterator keeps all odd keys")
+    void when_removeEvenKeysViaIterator_then_oddKeysRemain() {
+      HashTable<Integer, Integer> m = new HashTable<>();
+      for (int i = 0; i < 10; i++) {
+        m.put(i, i);
+      }
+      Iterator<Integer> it = m.keySet().iterator();
+      while (it.hasNext()) {
+        if (it.next() % 2 == 0) {
+          it.remove();
+        }
+      }
+      assertEquals(5, m.size());
+      for (int i = 1; i < 10; i += 2) {
+        assertEquals(i, m.get(i));
+      }
+      for (int i = 0; i < 10; i += 2) {
+        assertNull(m.get(i));
+      }
+    }
+
+    @Test
+    @DisplayName("Removing all entries via the iterator empties the map")
+    void when_removeAllViaIterator_then_mapEmpty() {
+      for (int i = 0; i < 100; i++) { // several resizes happen during the fill
+        map.put("k" + i, i);
+      }
+      Iterator<String> it = map.keySet().iterator();
+      while (it.hasNext()) {
+        it.next();
+        it.remove();
+      }
+      assertTrue(map.isEmpty());
+      assertEquals(0, map.size());
+    }
+
+    @Test
+    @DisplayName("remove() before any next() throws IllegalStateException")
+    void when_removeBeforeNext_then_throwsIllegalStateException() {
+      map.put("a", 1);
+      assertThrows(IllegalStateException.class,
+                   () -> map.keySet().iterator().remove());
+    }
+
+    @Test
+    @DisplayName("remove() twice after one next() throws IllegalStateException")
+    void when_removeTwiceAfterOneNext_then_throwsIllegalStateException() {
+      map.put("a", 1);
+      map.put("b", 2);
+      Iterator<String> it = map.keySet().iterator();
+      it.next();
+      it.remove();
+      assertThrows(IllegalStateException.class, it::remove);
+    }
+
+    @Test
+    @DisplayName("A structural change between next() and remove() throws CME")
+    void when_mapModifiedBetweenNextAndRemove_then_throwsCME() {
+      map.put("a", 1);
+      map.put("b", 2);
+      Iterator<String> it = map.keySet().iterator();
+      it.next();
+      map.put("c", 3);
+      assertThrows(ConcurrentModificationException.class, it::remove);
+    }
+  }
+
+  @Nested
+  @DisplayName("Iteration and resize")
+  class IterationAndResizeTest {
+
+    @Test
+    @DisplayName(
+        "Iteration over a map that grew (multiple resizes) skips no elements")
+    void
+    when_iterateAfterMultipleResizes_then_noElementsSkipped() {
+      // 1000 entries: the table grew 16 → 32 → ... → 1024.
+      // REGRESSION: the buggy resize() from an earlier iteration lost ~75% of
+      // the nodes — an iterator over such a map "skipped" those elements.
+      HashTable<Integer, Integer> m = new HashTable<>();
+      for (int i = 0; i < 1_000; i++) {
+        m.put(i, i * 2);
+      }
+      int count = 0;
+      for (Integer k : m.keySet()) {
+        assertEquals(k * 2, m.get(k));
+        count++;
+      }
+      assertEquals(1_000, count);
+      assertEquals(1_000, m.size());
+    }
+
+    @Test
+    @DisplayName(
+        "entrySet() iteration after resize yields key-value-consistent pairs")
+    void
+    when_iterateEntrySetAfterResize_then_pairsConsistent() {
+      for (int i = 0; i < 300; i++) {
+        map.put("k" + i, i);
+      }
+      int count = 0;
+      for (Map.Entry<String, Integer> e : map.entrySet()) {
+        assertEquals(e.getValue(), map.get(e.getKey()));
+        count++;
+      }
+      assertEquals(300, count);
+    }
+
+    @Test
+    @DisplayName("A view obtained before growth stays consistent afterwards")
+    void when_viewObtainedBeforeGrowth_then_staysConsistent() {
+      Set<String> keys = map.keySet();
+      map.put("a", 1);
+      assertEquals(1, keys.size());
+      for (int i = 0; i < 200; i++) { // growth with resizes
+        map.put("k" + i, i);
+      }
+      assertEquals(201, keys.size());
+      assertTrue(keys.contains("k199"));
+    }
+  }
+
+  @Nested
+  @DisplayName("Collection views")
+  class ViewsTest {
+
+    @Test
+    @DisplayName("Views are cached: repeated calls return the same instance")
+    void when_viewCalledTwice_then_sameInstance() {
+      assertSame(map.keySet(), map.keySet());
+      assertSame(map.values(), map.values());
+      assertSame(map.entrySet(), map.entrySet());
+    }
+
+    @Test
+    @DisplayName("The views are live: they reflect later map changes")
+    void when_mapModifiedAfterViewCreation_then_viewReflectsChanges() {
+      Set<String> keys = map.keySet();
+      assertTrue(keys.isEmpty());
+      map.put("a", 1);
+      assertEquals(1, keys.size());
+      assertTrue(keys.contains("a"));
+    }
+
+    @Test
+    @DisplayName("keySet().contains() is consistent with containsKey()")
+    void when_keySetContains_then_matchesContainsKey() {
+      map.put("a", 1);
+      map.put(null, 2);
+      assertTrue(map.keySet().contains("a"));
+      assertTrue(map.keySet().contains(null));
+      assertFalse(map.keySet().contains("b"));
+    }
+
+    @Test
+    @DisplayName("keySet().remove() removes the mapping from the map")
+    void when_keySetRemove_then_mappingRemoved() {
+      map.put("a", 1);
+      map.put("b", 2);
+      assertTrue(map.keySet().remove("a"));
+      assertNull(map.get("a"));
+      assertEquals(1, map.size());
+      assertFalse(map.keySet().remove("missing"));
+      assertEquals(1, map.size());
+    }
+
+    @Test
+    @DisplayName("entrySet().contains() requires both key AND value to match")
+    void when_entrySetContains_then_keyAndValueMustMatch() {
+      map.put("a", 1);
+      map.put(null, 5);
+      assertTrue(
+          map.entrySet().contains(new AbstractMap.SimpleEntry<>("a", 1)));
+      assertTrue(
+          map.entrySet().contains(new AbstractMap.SimpleEntry<>(null, 5)));
+      assertFalse(map.entrySet().contains(
+          new AbstractMap.SimpleEntry<>("a", 2))); // wrong value
+      assertFalse(map.entrySet().contains(
+          new AbstractMap.SimpleEntry<>("b", 1))); // wrong key
+      assertFalse(map.entrySet().contains("not an entry"));
+    }
+
+    @Test
+    @DisplayName(
+        "entrySet().remove() removes the pair only when the value matches")
+    void
+    when_entrySetRemove_then_removedOnlyIfValueMatches() {
+      map.put("a", 1);
+      map.put("b", 2);
+      assertFalse(
+          map.entrySet().remove(new AbstractMap.SimpleEntry<>("a", 99)));
+      assertEquals(2, map.size());
+      assertTrue(map.entrySet().remove(new AbstractMap.SimpleEntry<>("a", 1)));
+      assertNull(map.get("a"));
+      assertEquals(1, map.size());
+    }
+
+    @Test
+    @DisplayName("clear() via a view clears the whole map")
+    void when_clearViaView_then_mapEmpty() {
+      map.put("a", 1);
+      map.put("b", 2);
+      map.keySet().clear();
+      assertTrue(map.isEmpty());
+    }
+
+    @Test
+    @DisplayName("View size() tracks the map size")
+    void when_viewSize_then_tracksMapSize() {
+      map.put("a", 1);
+      assertEquals(1, map.keySet().size());
+      assertEquals(1, map.values().size());
+      assertEquals(1, map.entrySet().size());
+      map.remove("a");
+      assertEquals(0, map.keySet().size());
+    }
+
+    @Test
+    @DisplayName("keySet().add() is unsupported")
+    void when_keySetAdd_then_throwsUnsupportedOperationException() {
+      assertThrows(UnsupportedOperationException.class,
+                   () -> map.keySet().add("x"));
     }
   }
 
@@ -738,8 +1196,8 @@ class MyHashMapTest {
   }
 
   /** Builds a map with n keys in one bucket */
-  private MyHashMap<CollisionKey, Integer> chain(int n) {
-    MyHashMap<CollisionKey, Integer> my = new MyHashMap<>();
+  private HashTable<CollisionKey, Integer> chain(int n) {
+    HashTable<CollisionKey, Integer> my = new HashTable<>();
     for (int i = 0; i < n; ++i) {
       my.put(CollisionKey.of(i), i);
     }
