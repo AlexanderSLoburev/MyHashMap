@@ -27,7 +27,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-
 class HashTableTest {
 
   private static final Duration HANG_GUARD = Duration.ofMillis(500);
@@ -797,7 +796,6 @@ class HashTableTest {
     @DisplayName("Iteration order: buckets left to right")
     void when_iterate_then_bucketsLeftToRight() {
       // Integer keys 0..9 hash to themselves and occupy buckets 0..9
-      // (10 entries < threshold 12 → no resize, the layout is deterministic)
       HashTable<Integer, Integer> m = new HashTable<>();
       for (int i = 0; i < 10; i++) {
         m.put(i, i);
@@ -853,7 +851,7 @@ class HashTableTest {
       }
       Iterator<String> it = map.keySet().iterator();
       it.next();
-      map.put("new", 0); // size 13 > 12 → resize; the put itself is structural
+      map.put("new", 0);
       assertThrows(ConcurrentModificationException.class, it::next);
     }
 
@@ -1019,9 +1017,6 @@ class HashTableTest {
         "Iteration over a map that grew (multiple resizes) skips no elements")
     void
     when_iterateAfterMultipleResizes_then_noElementsSkipped() {
-      // 1000 entries: the table grew 16 → 32 → ... → 1024.
-      // REGRESSION: the buggy resize() from an earlier iteration lost ~75% of
-      // the nodes — an iterator over such a map "skipped" those elements.
       HashTable<Integer, Integer> m = new HashTable<>();
       for (int i = 0; i < 1_000; i++) {
         m.put(i, i * 2);
